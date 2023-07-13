@@ -1,0 +1,109 @@
+# Install and load the necessary packages
+
+ 
+
+library(rvest)
+library(dplyr)
+
+ 
+
+# Function to scrape movie information based on title
+
+scrape_movie_info <- function(title) {
+
+  # Construct the IMDb search URL
+
+  base_url <- https://www.imdb.com
+
+# Make sure that we choose the first exact result for the searched title
+  search_url <- paste0(base_url, "/find/?q=", URLencode(title),"&s=tt&exact=true&ref_=fn_tt_ex")
+
+ 
+
+  # Load html page by url
+
+  search_page <- read_html(search_url)
+
+ 
+
+  # Select the element on the page with the first result and extract the link to the movie page
+
+  first_result <- search_page %>%
+
+   html_element("a.ipc-metadata-list-summary-item__t") %>%
+
+   html_attr("href") 
+
+ 
+
+  if (!is.na(first_result)) {
+
+    movie_url <- paste0(base_url, first_result)
+
+    # Read the moviepage
+    movie_page <- read_html(movie_url)
+
+ 
+
+    # Scrape the rating by choosing the element with the rating
+
+    rating <- movie_page %>% html_nodes(".sc-52d569c6-1 span.sc-bde20123-1") %>%  html_text() %>% as.numeric()
+
+    ## Scrape duration
+
+    ### select parent element with release year, age rating and duration info 
+    parent_duration <- movie_page %>% html_element("ul.sc-afe43def-4")
+    
+    duration_children<- parent_duration %>% html_children() # This is the nodes with the release year, age rating and duration
+
+    duration <- duration_children[length(duration_children)] %>% html_text() # The duration is always the last information 
+
+    ## Scrape budget
+    ### select budget parent element with box office details
+    parent_budget <- movie_page  %>% html_element("ul.sc-6d4f3f8c-0")
+
+    budget_children <- parent_budget %>% html_children()
+    #### If budget is part of the box office numbers it will always be the first information. 
+    budget_include <- ifelse(length(budget_children)>=1,budget_children[[1]] %>% html_text2() %>% str_detect("Budget"),F) 
+
+    if(budget_include==T){
+
+    budget_pre <- movie_page %>% html_nodes("[data-testid='title-boxoffice-budget'] span.ipc-metadata-list-item__list-content-item") %>% html_text()
+    # Usually they write something like $ 25,000,000 (estimated) so i make sure to not include this in the budget. 
+    budget <- budget_pre %>%
+
+                str_remove(\\s\\(estimated\\)) %>%
+
+                str_remove("\\$") %>%
+
+                str_remove(\\€) %>%
+
+                str_remove_all(\\s) %>%
+
+                str_remove("DKK") %>%
+
+                str_remove("NOK") %>%
+
+                str_remove("SEK") %>%
+
+                str_replace_all(",","") %>%
+
+                as.double()} else{budget <- 0}
+    # Collect all information in a tibble 
+    movie_result <- tibble(title,rating,duration,budget)
+
+    return(movie_result)
+
+  } else {
+    # Return empty information if no results come up. 
+    tibble(title,"rating"=NA,"duration"=NA,"budget"=NA)
+
+  }
+
+}
+
+ 
+
+# Example usage
+
+scrape_movie_info("Skjærsgården")
